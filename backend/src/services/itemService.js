@@ -23,6 +23,7 @@ export function loadSeedData() {
         image: item.image || '',
         status: item.status || 'active',
         userId: null,
+        claimedBy: item.claimedBy || null,
         createdAt: new Date(item.date).toISOString(),
         updatedAt: new Date(item.date).toISOString()
       }));
@@ -178,6 +179,54 @@ export class ItemService {
   }
 
   /**
+   * Retrieve reports submitted by a specific student.
+   */
+  static async getMyReports(userId, query = {}) {
+    if (!userId) {
+      throw new AppError('Authentication required to view your reports.', 401);
+    }
+
+    const { type, status } = query;
+
+    if (isDatabaseConnected()) {
+      const filter = {
+        $or: [{ userId: String(userId) }, { 'claimedBy.userId': String(userId) }]
+      };
+      if (type && type !== 'all') {
+        filter.type = type;
+      }
+      if (status && status !== 'all') {
+        filter.status = status;
+      }
+      const docs = await Item.find(filter).sort({ createdAt: -1, date: -1 }).lean();
+      const items = docs.map((doc) => {
+        const { _id, __v, ...rest } = doc;
+        return rest;
+      });
+      return { items, total: items.length };
+    }
+
+    assertFallbackAllowed();
+
+    let userItems = memoryStore.filter(
+      (i) =>
+        (i.userId && String(i.userId) === String(userId)) ||
+        (i.claimedBy && String(i.claimedBy.userId) === String(userId))
+    );
+    if (type && type !== 'all') {
+      userItems = userItems.filter((i) => i.type === type);
+    }
+    if (status && status !== 'all') {
+      userItems = userItems.filter((i) => i.status === status);
+    }
+
+    return {
+      items: userItems,
+      total: userItems.length
+    };
+  }
+
+  /**
    * Retrieve a specific item by ID.
    */
   static async getItemById(id) {
@@ -309,6 +358,88 @@ export class ItemService {
       ...memoryStore[itemIndex],
       ...updates,
       id: numericId,
+      updatedAt: new Date().toISOString()
+    };
+
+    memoryStore[itemIndex] = updated;
+    return updated;
+  }
+
+  /**
+   * Claim a found item by an authenticated student.
+   * Atomically marks status as 'resolved' and records claimant identity.
+   */
+  static async claimItem(id, user) {
+    const numericId = parseInt(id, 10);
+    if (isNaN(numericId) || numericId <= 0) {
+      throw new AppError('Invalid item ID format.', 400);
+    }
+    if (!user || !user.id) {
+      throw new AppError('Authentication required to claim an item.', 401);
+    }
+
+    const claimedBy = {
+      userId: String(user.id),
+      name: user.name || 'CBIT Student',
+      rollNo: user.rollNo || '',
+      email: user.email || '',
+      claimedAt: new Date().toISOString()
+    };
+
+    if (isDatabaseConnected()) {
+      const existing = await Item.findOne({ id: numericId }).lean();
+      if (!existing) {
+        throw new AppError(`Item with ID ${id} not found.`, 404);
+      }
+      if (existing.status === 'resolved') {
+        throw new AppError('This item has already been marked as resolved or claimed.', 400);
+      }
+      if (existing.type !== 'found') {
+        throw new AppError('Only items listed as found can be claimed by students.', 400);
+      }
+
+      // Atomic update conditional on status being not resolved
+      const updatedDoc = await Item.findOneAndUpdate(
+        { id: numericId, status: { $ne: 'resolved' } },
+        {
+          $set: {
+            status: 'resolved',
+            claimedBy: {
+              ...claimedBy,
+              claimedAt: new Date()
+            }
+          }
+        },
+        { new: true, runValidators: true }
+      ).lean();
+
+      if (!updatedDoc) {
+        throw new AppError('This item has already been marked as resolved or claimed.', 400);
+      }
+
+      const { _id, __v, ...rest } = updatedDoc;
+      return rest;
+    }
+
+    assertFallbackAllowed();
+
+    const itemIndex = memoryStore.findIndex((i) => i.id === numericId);
+    if (itemIndex === -1) {
+      throw new AppError(`Item with ID ${id} not found.`, 404);
+    }
+
+    const existing = memoryStore[itemIndex];
+    if (existing.status === 'resolved') {
+      throw new AppError('This item has already been marked as resolved or claimed.', 400);
+    }
+    if (existing.type !== 'found') {
+      throw new AppError('Only items listed as found can be claimed by students.', 400);
+    }
+
+    const updated = {
+      ...existing,
+      status: 'resolved',
+      claimedBy,
       updatedAt: new Date().toISOString()
     };
 

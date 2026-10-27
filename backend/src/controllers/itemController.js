@@ -24,6 +24,21 @@ export async function getItems(req, res, next) {
   }
 }
 
+export async function getMyReports(req, res, next) {
+  try {
+    const result = await ItemService.getMyReports(req.user.id, req.query);
+    res.status(200).json({
+      success: true,
+      data: result.items,
+      meta: {
+        total: result.total
+      }
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 export async function getItemById(req, res, next) {
   try {
     const item = await ItemService.getItemById(req.params.id);
@@ -69,6 +84,19 @@ export async function deleteItem(req, res, next) {
       success: true,
       message: result.message,
       data: { id: result.id }
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function claimItem(req, res, next) {
+  try {
+    const updated = await ItemService.claimItem(req.params.id, req.user);
+    res.status(200).json({
+      success: true,
+      message: 'Item claimed successfully. Status updated to Resolved.',
+      data: updated
     });
   } catch (err) {
     next(err);

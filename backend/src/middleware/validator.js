@@ -10,6 +10,76 @@ const PHONE_REGEX = /^[6-9]\d{9}$/;
 const EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
 // Date regex YYYY-MM-DD
 const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+// CBIT institutional email pattern
+export const CBIT_EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@([a-zA-Z0-9-]+\.)*cbit\.ac\.in$/i;
+// Roll number pattern
+export const ROLL_NO_REGEX = /^[0-9]{2}[A-Za-z0-9]{8,10}$/i;
+// Password strength: at least 8 chars, at least one letter and one number
+export const PASSWORD_STRENGTH_REGEX = /^(?=.*[A-Za-z])(?=.*\d).{8,}$/;
+
+/**
+ * Validation schema for student registration.
+ */
+export const registerSchema = z.object({
+  name: z
+    .string({ required_error: 'Full name is required.' })
+    .trim()
+    .min(2, 'Name must be at least 2 characters long.')
+    .max(255, 'Name cannot exceed 255 characters.'),
+  email: z
+    .string({ required_error: 'Institutional email is required.' })
+    .trim()
+    .toLowerCase()
+    .regex(
+      CBIT_EMAIL_REGEX,
+      'Registration requires a valid CBIT institutional email ending in @cbit.ac.in'
+    ),
+  rollNo: z
+    .string({ required_error: 'Roll number is required.' })
+    .trim()
+    .toUpperCase()
+    .regex(ROLL_NO_REGEX, 'Enter a valid student roll number (e.g. 23A91A0501 or 160121733001).'),
+  password: z
+    .string({ required_error: 'Password is required.' })
+    .min(8, 'Password must be at least 8 characters long.')
+    .max(100, 'Password cannot exceed 100 characters.')
+    .regex(
+      PASSWORD_STRENGTH_REGEX,
+      'Password must contain at least one letter and at least one number.'
+    )
+});
+
+/**
+ * Validation schema for student login.
+ */
+export const loginSchema = z.object({
+  email: z
+    .string({ required_error: 'Institutional email is required.' })
+    .trim()
+    .toLowerCase()
+    .regex(EMAIL_REGEX, 'Enter a valid email address.'),
+  password: z
+    .string({ required_error: 'Password is required.' })
+    .min(1, 'Password cannot be empty.')
+});
+
+/**
+ * Validation schema for changing student password.
+ */
+export const changePasswordSchema = z.object({
+  currentPassword: z
+    .string({ required_error: 'Current password is required.' })
+    .min(1, 'Current password cannot be empty.'),
+  newPassword: z
+    .string({ required_error: 'New password is required.' })
+    .min(8, 'New password must be at least 8 characters long.')
+    .max(100, 'New password cannot exceed 100 characters.')
+    .regex(
+      PASSWORD_STRENGTH_REGEX,
+      'New password must contain at least one letter and at least one number.'
+    )
+});
+
 
 /**
  * Validation schema for creating a report.

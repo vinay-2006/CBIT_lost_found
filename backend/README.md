@@ -243,11 +243,13 @@ npm test
 ```
 
 ### Test Suite Structure:
-1. `tests/auth.test.js` (9 tests): JWT signing, `requireAuth`, `optionalAuth`, ownership checks, guest report protection.
-2. `tests/items.test.js` (35 tests): CRUD operations, Indian phone & roll number validation, search, filtering, pagination, upload type restrictions, and production safety guards.
-3. `tests/mongodb.live.test.js` (9 tests): **Live MongoDB integration tests** verifying active connection, ping latency, real collection queries, mutations, and stats aggregation.
+1. `tests/studentAuth.test.js` (12 tests): Student registration, login, CBIT institutional email verification (`@cbit.ac.in`), roll number format, password strength, duplicate prevention, HttpOnly session cookies, and logout.
+2. `tests/statusWorkflow.test.js` (8 tests): Dynamic status lifecycle (`active` ↔ `resolved`), ownership authorization, `GET /api/items/my-reports`, non-owner/anonymous rejection, dynamic stats counter updates.
+3. `tests/auth.test.js` (9 tests): JWT signing, `requireAuth`, `optionalAuth`, ownership checks, guest report protection.
+4. `tests/items.test.js` (35 tests): CRUD operations, Indian phone & roll number validation, search, filtering, pagination, upload type restrictions, and production safety guards.
+5. `tests/mongodb.live.test.js` (9 tests): **Live MongoDB integration tests** verifying active connection, ping latency, real collection queries, mutations, and stats aggregation.
 
-**Result: 53 tests across 12 suites pass with 0 failures.**
+**Result: 65 tests across 14 suites pass with 0 failures.**
 
 ---
 

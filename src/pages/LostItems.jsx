@@ -1,67 +1,107 @@
-import { useState, useEffect } from 'react'
-import ItemCard from '../components/ItemCard'
-import SearchBar from '../components/SearchBar'
-import { API_BASE_URL } from '../services/api'
+import { useState, useEffect } from 'react';
+import ItemCard from '../components/ItemCard';
+import SearchBar from '../components/SearchBar';
+import { apiRequest } from '../services/api';
 
 function LostItems() {
-  const [items, setItems] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
-  const [searchTerm, setSearchTerm] = useState('')
-  const [category, setCategory] = useState('All')
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [category, setCategory] = useState('All');
+  const [statusFilter, setStatusFilter] = useState('all');
 
-  // Fetch items using backend API
+  const fetchLostItems = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await apiRequest('/items?type=lost&limit=100');
+      const itemData = Array.isArray(res) ? res : res.data || [];
+      setItems(itemData.filter((item) => item.type === 'lost'));
+    } catch (err) {
+      console.error('Fetch error:', err);
+      setError('Unable to load lost items.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    fetch(`${API_BASE_URL}/items?type=lost&limit=100`)
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error('Network response was not ok')
-        }
-        return response.json()
-      })
-      .then((res) => {
-        const itemData = Array.isArray(res) ? res : (res.data || [])
-        // Filter only lost items
-        setItems(itemData.filter((item) => item.type === 'lost'))
-        setLoading(false)
-      })
-      .catch((err) => {
-        console.error('Fetch error:', err)
-        setError('Unable to load item data.')
-        setLoading(false)
-      })
-  }, [])
+    fetchLostItems();
+  }, []);
 
-  // Filter items based on search term and category
+  const handleStatusChange = (updatedItem) => {
+    setItems((prev) => prev.map((item) => (item.id === updatedItem.id ? updatedItem : item)));
+  };
+
+  // Filter items based on search term, category, and status
   const filteredItems = items.filter((item) => {
     const matchesSearch =
       item.itemName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       item.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.location.toLowerCase().includes(searchTerm.toLowerCase())
-    const matchesCategory = category === 'All' || item.category === category
-    return matchesSearch && matchesCategory
-  })
+      item.location.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesCategory = category === 'All' || item.category === category;
+    const matchesStatus = statusFilter === 'all' || item.status === statusFilter;
+    return matchesSearch && matchesCategory && matchesStatus;
+  });
 
   if (loading) {
     return (
-      <div className="container mt-4">
-        <p>Loading items...</p>
+      <div className="container mt-5 text-center py-5">
+        <div className="spinner-border text-danger" role="status">
+          <span className="visually-hidden">Loading lost items...</span>
+        </div>
+        <p className="mt-2 text-muted">Loading lost items...</p>
       </div>
-    )
+    );
   }
 
   if (error) {
     return (
       <div className="container mt-4">
-        <div className="alert alert-danger">{error}</div>
+        <div className="alert alert-danger" role="alert">
+          {error}
+          <button className="btn btn-outline-danger btn-sm ms-3" onClick={fetchLostItems}>
+            Retry
+          </button>
+        </div>
       </div>
-    )
+    );
   }
 
   return (
     <div className="container mt-4 mb-4">
-      <h2>Lost Items</h2>
-      <p className="text-muted">Items reported missing by students on campus.</p>
+      <div className="d-flex flex-wrap justify-content-between align-items-center mb-3">
+        <div>
+          <h2 className="fw-bold mb-1">Lost Items</h2>
+          <p className="text-muted mb-0">Items reported missing by students across the campus.</p>
+        </div>
+        <div className="mt-2 mt-sm-0">
+          <div className="btn-group btn-group-sm" role="group" aria-label="Status filter">
+            <button
+              type="button"
+              className={`btn ${statusFilter === 'all' ? 'btn-primary' : 'btn-outline-primary'}`}
+              onClick={() => setStatusFilter('all')}
+            >
+              All Statuses
+            </button>
+            <button
+              type="button"
+              className={`btn ${statusFilter === 'active' ? 'btn-warning text-dark' : 'btn-outline-secondary'}`}
+              onClick={() => setStatusFilter('active')}
+            >
+              Active Only
+            </button>
+            <button
+              type="button"
+              className={`btn ${statusFilter === 'resolved' ? 'btn-success' : 'btn-outline-secondary'}`}
+              onClick={() => setStatusFilter('resolved')}
+            >
+              Resolved Only
+            </button>
+          </div>
+        </div>
+      </div>
 
       <SearchBar
         searchTerm={searchTerm}
@@ -71,18 +111,22 @@ function LostItems() {
       />
 
       {filteredItems.length === 0 ? (
-        <p className="text-muted">No items found matching your criteria.</p>
+        <div className="card text-center py-5">
+          <div className="card-body">
+            <p className="text-muted mb-0">No lost items found matching your filter criteria.</p>
+          </div>
+        </div>
       ) : (
         <div className="row g-3">
           {filteredItems.map((item) => (
             <div key={item.id} className="col-sm-6 col-md-4 col-lg-3">
-              <ItemCard item={item} />
+              <ItemCard item={item} onStatusChange={handleStatusChange} />
             </div>
           ))}
         </div>
       )}
     </div>
-  )
+  );
 }
 
-export default LostItems
+export default LostItems;

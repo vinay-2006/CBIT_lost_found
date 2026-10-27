@@ -1,126 +1,102 @@
-import { useState, useEffect } from 'react'
-import StatCard from '../components/StatCard'
-import { API_BASE_URL, getImageUrl } from '../services/api'
+import { useState, useEffect } from 'react';
+import StatCard from '../components/StatCard';
+import { apiRequest, getImageUrl } from '../services/api';
 
 function Dashboard() {
-  const [items, setItems] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
+  const [statsData, setStatsData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  // Fetch live data from backend API
-  useEffect(() => {
-    fetch(`${API_BASE_URL}/items?limit=100`)
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error('Network response was not ok')
-        }
-        return response.json()
-      })
-      .then((res) => {
-        const itemData = Array.isArray(res) ? res : (res.data || [])
-        setItems(itemData)
-        setLoading(false)
-      })
-      .catch((err) => {
-        console.error('Fetch error:', err)
-        setError('Unable to load item data.')
-        setLoading(false)
-      })
-  }, [])
-
-  if (loading) {
-    return (
-      <div className="container mt-4">
-        <p>Loading items...</p>
-      </div>
-    )
-  }
-
-  if (error) {
-    return (
-      <div className="container mt-4">
-        <div className="alert alert-danger">{error}</div>
-      </div>
-    )
-  }
-
-  // Use items fetched directly from MongoDB
-  const allItems = items
-
-  // Compute statistics from data
-  const lostCount = allItems.filter((item) => item.type === 'lost').length
-  const foundCount = allItems.filter((item) => item.type === 'found').length
-  const resolvedCount = allItems.filter((item) => item.status === 'resolved').length
-  const totalCount = allItems.length
-
-  // Category counts for bar chart
-  const categories = ['Electronics', 'Documents', 'Books', 'Accessories', 'Others']
-  const categoryCounts = categories.map((cat) => ({
-    name: cat,
-    count: allItems.filter((item) => item.category === cat).length
-  }))
-  const maxCategoryCount = Math.max(...categoryCounts.map((c) => c.count), 1)
-
-  // Monthly counts for bar chart
-  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-  const monthMap = {}
-  allItems.forEach((item) => {
-    const d = new Date(item.date)
-    const sortKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-    const label = `${monthNames[d.getMonth()]} ${d.getFullYear()}`
-    if (!monthMap[sortKey]) {
-      monthMap[sortKey] = { label, count: 0 }
+  const fetchStats = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await apiRequest('/stats');
+      setStatsData(res.data);
+    } catch (err) {
+      console.error('Fetch stats error:', err);
+      setError('Unable to load dashboard analytics from server.');
+    } finally {
+      setLoading(false);
     }
-    monthMap[sortKey].count++
-  })
-  const monthData = Object.entries(monthMap)
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([, val]) => val)
-  const maxMonthCount = Math.max(...monthData.map((m) => m.count), 1)
+  };
 
-  // Recent reports (5 most recent by date)
-  const recentItems = [...allItems]
-    .sort((a, b) => new Date(b.date) - new Date(a.date))
-    .slice(0, 5)
+  useEffect(() => {
+    fetchStats();
+  }, []);
+
+  if (loading && !statsData) {
+    return (
+      <div className="container mt-5 text-center py-5">
+        <div className="spinner-border text-primary" role="status">
+          <span className="visually-hidden">Loading dashboard...</span>
+        </div>
+        <p className="mt-2 text-muted">Loading live campus analytics...</p>
+      </div>
+    );
+  }
+
+  if (error && !statsData) {
+    return (
+      <div className="container mt-4">
+        <div className="alert alert-danger" role="alert">
+          {error}
+          <button className="btn btn-outline-danger btn-sm ms-3" onClick={fetchStats}>
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const {
+    summary = { total: 0, lost: 0, found: 0, resolved: 0, active: 0 },
+    categoryBreakdown = [],
+    monthlyDistribution = [],
+    recentItems = []
+  } = statsData || {};
+
+  const maxCategoryCount = Math.max(...categoryBreakdown.map((c) => c.count), 1);
+  const maxMonthCount = Math.max(...monthlyDistribution.map((m) => m.count), 1);
 
   return (
     <div className="container mt-4 mb-4">
       {/* College Heading */}
       <div className="text-center mb-4">
-        <h1>College Lost &amp; Found Portal</h1>
-        <p className="text-muted">
-          A simple platform for students to report and find lost belongings on campus.
+        <h1 className="fw-bold">College Lost &amp; Found Portal</h1>
+        <p className="text-muted mb-1">
+          A centralized platform for students and staff to report and recover lost belongings across campus.
         </p>
         <p className="text-muted small">
           CBIT &mdash; Chaitanya Bharathi Institute of Technology
         </p>
       </div>
 
-      {/* Statistics Cards */}
+      {/* Live Statistics Cards */}
       <div className="row g-3 mb-4">
         <div className="col-6 col-md-3">
-          <StatCard label="Lost Reports" value={lostCount} color="danger" />
+          <StatCard label="Lost Reports" value={summary.lost} color="danger" />
         </div>
         <div className="col-6 col-md-3">
-          <StatCard label="Found Reports" value={foundCount} color="success" />
+          <StatCard label="Found Reports" value={summary.found} color="success" />
         </div>
         <div className="col-6 col-md-3">
-          <StatCard label="Resolved Cases" value={resolvedCount} color="info" />
+          <StatCard label="Resolved Cases" value={summary.resolved} color="info" />
         </div>
         <div className="col-6 col-md-3">
-          <StatCard label="Total Reports" value={totalCount} color="primary" />
+          <StatCard label="Total Reports" value={summary.total} color="primary" />
         </div>
       </div>
 
-      {/* Simple Analytics */}
+      {/* Analytics Breakdown */}
       <div className="row mb-4">
         {/* Reports by Category */}
         <div className="col-md-6 mb-4">
-          <div className="card">
+          <div className="card h-100">
             <div className="card-body">
-              <h5 className="card-title">Reports by Category</h5>
+              <h5 className="card-title fw-bold">Reports by Category</h5>
               <div className="mt-3">
-                {categoryCounts.map((cat) => (
+                {categoryBreakdown.map((cat) => (
                   <div key={cat.name} className="d-flex align-items-center mb-2">
                     <span className="analytics-label">{cat.name}</span>
                     <div className="analytics-bar-container flex-grow-1 mx-2">
@@ -139,22 +115,26 @@ function Dashboard() {
 
         {/* Reports by Month */}
         <div className="col-md-6 mb-4">
-          <div className="card">
+          <div className="card h-100">
             <div className="card-body">
-              <h5 className="card-title">Reports by Month</h5>
+              <h5 className="card-title fw-bold">Reports by Month</h5>
               <div className="mt-3">
-                {monthData.map((month) => (
-                  <div key={month.label} className="d-flex align-items-center mb-2">
-                    <span className="analytics-label">{month.label}</span>
-                    <div className="analytics-bar-container flex-grow-1 mx-2">
-                      <div
-                        className="analytics-bar bg-info"
-                        style={{ width: `${(month.count / maxMonthCount) * 100}%` }}
-                      ></div>
+                {monthlyDistribution.length === 0 ? (
+                  <p className="text-muted small">No monthly data available yet.</p>
+                ) : (
+                  monthlyDistribution.map((month) => (
+                    <div key={month.label || month.key} className="d-flex align-items-center mb-2">
+                      <span className="analytics-label">{month.label}</span>
+                      <div className="analytics-bar-container flex-grow-1 mx-2">
+                        <div
+                          className="analytics-bar bg-info"
+                          style={{ width: `${(month.count / maxMonthCount) * 100}%` }}
+                        ></div>
+                      </div>
+                      <span className="analytics-count">{month.count}</span>
                     </div>
-                    <span className="analytics-count">{month.count}</span>
-                  </div>
-                ))}
+                  ))
+                )}
               </div>
             </div>
           </div>
@@ -162,55 +142,85 @@ function Dashboard() {
       </div>
 
       {/* Recent Reports Table */}
-      <h5 className="mb-3">Recent Reports</h5>
-      <div className="table-responsive">
-        <table className="table table-bordered table-striped">
+      <div className="d-flex justify-content-between align-items-center mb-3">
+        <h5 className="mb-0 fw-bold">Recent Campus Reports</h5>
+        <button
+          type="button"
+          className="btn btn-outline-secondary btn-sm"
+          onClick={fetchStats}
+          disabled={loading}
+          title="Refresh analytics from server"
+        >
+          {loading ? 'Refreshing...' : '↻ Refresh Data'}
+        </button>
+      </div>
+
+      <div className="table-responsive card">
+        <table className="table table-bordered table-striped align-middle mb-0">
           <thead className="table-light">
             <tr>
-              <th>Image</th>
+              <th style={{ width: '60px' }}>Image</th>
               <th>Item</th>
               <th>Type</th>
               <th>Category</th>
               <th>Location</th>
               <th>Date</th>
+              <th>Status</th>
             </tr>
           </thead>
           <tbody>
-            {recentItems.map((item) => (
-              <tr key={item.id}>
-                <td>
-                  <img
-                    src={getImageUrl(item.image)}
-                    alt={item.itemName}
-                    className="recent-table-img"
-                    onError={(e) => {
-                      e.currentTarget.onerror = null
-                      e.currentTarget.src = '/images/placeholder.svg'
-                    }}
-                  />
-                </td>
-                <td>{item.itemName}</td>
-                <td>
-                  <span className={`badge ${item.type === 'lost' ? 'bg-danger' : 'bg-success'}`}>
-                    {item.type === 'lost' ? 'Lost' : 'Found'}
-                  </span>
-                </td>
-                <td>{item.category}</td>
-                <td>{item.location}</td>
-                <td>
-                  {new Date(item.date).toLocaleDateString('en-IN', {
-                    day: '2-digit',
-                    month: 'short',
-                    year: 'numeric'
-                  })}
+            {recentItems.length === 0 ? (
+              <tr>
+                <td colSpan="7" className="text-center py-4 text-muted">
+                  No reports available yet.
                 </td>
               </tr>
-            ))}
+            ) : (
+              recentItems.map((item) => (
+                <tr key={item.id}>
+                  <td>
+                    <img
+                      src={getImageUrl(item.image)}
+                      alt={item.itemName}
+                      className="recent-table-img"
+                      onError={(e) => {
+                        e.currentTarget.onerror = null;
+                        e.currentTarget.src = '/images/placeholder.svg';
+                      }}
+                    />
+                  </td>
+                  <td className="fw-semibold">{item.itemName}</td>
+                  <td>
+                    <span className={`badge ${item.type === 'lost' ? 'bg-danger' : 'bg-success'}`}>
+                      {item.type === 'lost' ? 'Lost' : 'Found'}
+                    </span>
+                  </td>
+                  <td>{item.category}</td>
+                  <td>{item.location}</td>
+                  <td>
+                    {new Date(item.date).toLocaleDateString('en-IN', {
+                      day: '2-digit',
+                      month: 'short',
+                      year: 'numeric'
+                    })}
+                  </td>
+                  <td>
+                    <span
+                      className={`badge ${
+                        item.status === 'resolved' ? 'bg-success' : 'bg-warning text-dark'
+                      }`}
+                    >
+                      {item.status === 'resolved' ? 'Resolved' : 'Active'}
+                    </span>
+                  </td>
+                </tr>
+              ))
+            )}
           </tbody>
         </table>
       </div>
     </div>
-  )
+  );
 }
 
-export default Dashboard
+export default Dashboard;

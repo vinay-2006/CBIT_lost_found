@@ -287,36 +287,39 @@ npm run dev
 
 All backend responses return standard JSON.
 
-| Method | Endpoint | Description |
-|---|---|---|
-| `GET` | `/api/health` | Health check with live MongoDB ping probe and latency |
-| `GET` | `/api/items` | List reports with search, category/type filter, and pagination |
-| `GET` | `/api/items/:id` | Retrieve report details by numeric ID |
-| `POST` | `/api/items` | Submit a new lost or found report (validated via Zod) |
-| `PATCH` | `/api/items/:id` | Update report status (`active` / `resolved`) or details |
-| `DELETE` | `/api/items/:id` | Delete report (enforces ownership and administrator checks) |
-| `GET` | `/api/stats` | Aggregated dashboard statistics (totals, category and monthly counts) |
-| `POST` | `/api/upload` | Upload image file (multipart/form-data, max 5MB, JPG/PNG/WebP) |
-| `GET` | `/data/items.json`| Direct backward-compatibility endpoint returning raw items array |
+### Authentication Endpoints
+| Method | Endpoint | Access | Description |
+|---|---|---|---|
+| `POST` | `/api/auth/register` | Public | Register student with name, CBIT institutional email (`@cbit.ac.in`), roll number, and password |
+| `POST` | `/api/auth/login` | Public | Authenticate student, sets HttpOnly `cbit_token` cookie and returns JWT |
+| `POST` | `/api/auth/logout` | Public | Clears HttpOnly session cookie |
+| `GET` | `/api/auth/me` | Protected | Returns current authenticated student profile (via cookie or Bearer token) |
 
-### Example: Creating a Report
+### Items & Management Endpoints
+| Method | Endpoint | Access | Description |
+|---|---|---|---|
+| `GET` | `/api/items` | Public | List reports with search, category/type/status filter, and pagination |
+| `GET` | `/api/items/my-reports` | Protected | Retrieve all reports submitted by the logged-in student |
+| `GET` | `/api/items/:id` | Public | Retrieve report details by numeric ID |
+| `POST` | `/api/items` | Protected / Auth | Submit a lost or found report (auto-associates `userId`) |
+| `PATCH` | `/api/items/:id` | Owner / Admin | Update report status (`active` ↔ `resolved`) or permitted content fields |
+| `DELETE` | `/api/items/:id` | Owner / Admin | Delete report (enforces ownership and administrator authorization) |
+| `GET` | `/api/stats` | Public | Aggregated live dashboard statistics (totals, resolved, category and monthly counts) |
+| `POST` | `/api/upload` | Auth / Public | Upload image file (multipart/form-data, max 5MB, JPG/PNG/WebP; SVG blocked) |
+| `GET` | `/api/health` | Public | Health check with live MongoDB ping probe and latency |
+| `GET` | `/data/items.json`| Public | Direct backward-compatibility endpoint returning raw items array |
+
+### Example: Student Registration
 ```http
-POST /api/items HTTP/1.1
+POST /api/auth/register HTTP/1.1
 Host: localhost:5000
 Content-Type: application/json
 
 {
-  "type": "lost",
-  "itemName": "Casio Scientific Calculator",
-  "category": "Electronics",
-  "description": "Black fx-991ES Plus left on 2nd floor library table",
-  "location": "Library - 2nd Floor",
-  "date": "2026-10-27",
-  "reportedBy": "Rahul Sharma",
-  "rollNo": "23A91A0501",
-  "contact": "9876543210",
-  "email": "rahul.sharma@cbit.ac.in",
-  "image": ""
+  "name": "Divya Teja",
+  "email": "divya.teja@cbit.ac.in",
+  "rollNo": "23A91A0577",
+  "password": "Password123!"
 }
 ```
 
@@ -324,12 +327,21 @@ Content-Type: application/json
 
 ## 13. Authentication and Authorization Overview
 
-1. **Guest Reporting**: Campus visitors and students can report lost or found items without logging in.
-2. **Authenticated Reports**: If an `Authorization: Bearer <jwt_token>` header is present, `optionalAuth` extracts the user ID and associates it with the record (`userId`).
-3. **Modification & Deletion Guards**:
-   - **Authenticated items**: Only the authenticated author (`userId === user.id`) or an administrator (`role === 'admin'`) can edit or delete the item.
-   - **Guest items**: Deleting guest items requires an administrator token (`403` for anonymous deletion). Status resolution (`active` -> `resolved`) is permitted. Modifying guest content requires an administrator token or reporter verification.
-4. **Token Generation**: Supported via `signToken({ id, email, role })` in `backend/src/middleware/auth.js`.
+1. **Student Registration**:
+   - Institutional domain validation enforces `@cbit.ac.in` (and subdomains) to ensure campus affiliation.
+   - Roll number format validation enforces standard 10–12 character formats (e.g., `23A91A0501`, `160121733001`).
+   - Strong password validation: Minimum 8 characters with at least one letter and one number.
+   - Passwords securely hashed with `bcryptjs` (salt factor 10) before persistence. Passwords are never returned in API responses or logs.
+2. **Dual Session Strategy**:
+   - Web browsers use secure `HttpOnly`, `SameSite: Lax` cookies (`cbit_token`).
+   - API clients and automated tests can also pass `Authorization: Bearer <token>`.
+3. **Report Ownership & Dynamic Lifecycle**:
+   - Reports submitted while authenticated automatically bind `userId: student.id`.
+   - Owners can update report status dynamically between `active` and `resolved` from their dashboard or item cards.
+   - Changes persist to MongoDB immediately and update dashboard counts and listing filters in real time.
+   - Unauthorized attempts by other students or anonymous users to edit or delete reports are strictly rejected (`401` / `403`).
+4. **Guest Report Compatibility**:
+   - Historical guest records (`userId: null`) cannot be claimed or modified by arbitrary users matching email or phone. Only administrators can delete or modify guest reports.
 
 ---
 
@@ -346,23 +358,33 @@ Content-Type: application/json
 
 ## 15. Testing and Verification
 
-Run the comprehensive test suites:
-
-### Backend Test Suite (53 tests across 12 suites)
+### Backend Test Suite (65 tests across 14 suites — 100% Passing)
 ```powershell
 cd backend
 npm test
 ```
 Includes:
-- **Unit Tests** (`auth.test.js`): JWT signing, validation, unauthorized access rejection.
-- **Integration Tests** (`items.test.js`): Routing, Zod validation, search, pagination, upload restrictions, production safety guards.
-- **Live MongoDB Tests** (`mongodb.live.test.js`): Real connection check, live ping, database queries, mutations, and aggregation against a running MongoDB instance.
+- **Student Authentication Tests** (`studentAuth.test.js`): Registration, login, duplicate account rejection, domain validation, password hashing, session cookies, `/api/auth/me`, logout.
+- **Status Lifecycle & Ownership Tests** (`statusWorkflow.test.js`): Owner resolution, reopen, non-owner rejection (403), anonymous rejection (401), invalid status rejection (400), dynamic stats updates.
+- **Auth Middleware Tests** (`auth.test.js`): Bearer tokens, token expiration, guest fallbacks, unauthorized tampering guards.
+- **Item Integration Tests** (`items.test.js`): CRUD, Zod validation, search, pagination, upload restrictions, production safety guards.
+- **Live MongoDB Tests** (`mongodb.live.test.js`): Real database operations when MongoDB service is running (with graceful skip when daemon is offline).
 
 ### Frontend Production Build
 ```powershell
 npm run build
 ```
-Compiles Vite client bundle to `dist/` with asset optimization.
+Compiles Vite client bundle to `dist/` with 0 errors.
+
+### Browser End-to-End Verification
+Automated browser testing verified the full student lifecycle:
+1. Registration with `@cbit.ac.in` email and roll number.
+2. Login and persistent session across page reloads.
+3. Reporting a lost item with auto-populated student identity.
+4. Managing report in "My Reports", toggling status to "Resolved".
+5. Verifying persistence of "Resolved" status across reloads and in live Dashboard metrics.
+6. Filtering by "Resolved Only" on `/lost-items`.
+7. Logging out and verifying protected route redirection back to `/login`.
 
 ---
 

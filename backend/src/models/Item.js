@@ -96,6 +96,13 @@ const itemSchema = new mongoose.Schema(
       type: String,
       default: null,
       index: true
+    },
+    claimedBy: {
+      userId: { type: String, default: null },
+      name: { type: String, default: '' },
+      rollNo: { type: String, default: '' },
+      email: { type: String, default: '' },
+      claimedAt: { type: Date, default: null }
     }
   },
   {

@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
+import cookieParser from 'cookie-parser';
 import path from 'path';
 import { env } from './config/env.js';
 import apiRoutes from './routes/index.js';
@@ -40,9 +41,10 @@ if (env.NODE_ENV !== 'test') {
   app.use(morgan('dev'));
 }
 
-// 4. Request Body Parsers
+// 4. Request Body & Cookie Parsers
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(cookieParser());
 
 // 5. Serve dedicated uploaded images statically
 app.use('/uploads', express.static(StorageService.getUploadsDir()));
